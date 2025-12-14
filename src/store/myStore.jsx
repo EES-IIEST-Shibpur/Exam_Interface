@@ -57,24 +57,24 @@ const ExamProvider = ({ children }) => {
       : { examId: "", answers: [] }
   );
 
-  const Questions = exam.questions.map((question) => ({
-    id: question._id, // mapping _id to id
-    content: question.text, // mapping text to content
-    url: question.image || "", // If image is absent, default to an empty string
-    options: question.options.map((option) => ({
-      id: option._id, // mapping _id to id
-      value: option.text // mapping text to value
+  const Questions = (exam?.questions || []).map((question) => ({
+    id: question._id || question.id || "",
+    content: question.text || question.content || "",
+    url: question.image || "",
+    options: (question.options || []).map((option) => ({
+      id: option._id || option.id || "",
+      value: option.text || option.value || ""
     }))
   }));
 
   const ExamTime = {
-    start: exam.startTime,
-    end: exam.endTime,
+    start: exam?.startTime || null,
+    end: exam?.endTime || null,
   };
 
-  const ExamTitle={
-    title: exam.title
-  }
+  const ExamTitle = {
+    title: exam?.title || "",
+  };
 
   const fetchUser = async (token) => {
     const res = await axios.post("http://localhost:8000/api/profile", {}, {
