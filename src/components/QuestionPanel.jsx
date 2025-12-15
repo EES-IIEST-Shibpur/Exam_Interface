@@ -2,17 +2,20 @@ import { useContext, useEffect, useState } from "react";
 import { ExamContext } from "../store/myStore";
 import "./question.css";
 
-const QuestionPanel = ({index, setIndex}) => {
+const QuestionPanel = ({ index, setIndex }) => {
   const { Questions, SaveResponse, ClearResponse, response, examId } = useContext(ExamContext);
-  const prevResponse = response.answers?response.answers.filter((ans)=>(ans.questionId===Questions[index - 1].id)):[];
+  const currentQuestion = Questions[index - 1] || null;
+  const prevResponse = currentQuestion
+    ? response.answers?.filter((ans) => ans.questionId === currentQuestion.id) || []
+    : [];
   const [option, setOption] = useState(null);
-  
-  useEffect(()=>{
-    if(prevResponse.length!==0){
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (prevResponse.length !== 0) {
       setOption(prevResponse[0].selectedOption);
-    }
-    else setOption(null);
-  },[index]);
+    } else setOption(null);
+  }, [index, currentQuestion]);
 
   const nextQuestion = () => {
     const len = Questions.length;
@@ -31,9 +34,11 @@ const QuestionPanel = ({index, setIndex}) => {
 
   const saveNext = () => {
     if (option) {
-      const questionId = Questions[index - 1].id;
+      const questionId = currentQuestion.id;
       const selectedOption = option;
       SaveResponse({ questionId, selectedOption, examId });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 800);
     }
     const len = Questions.length;
     if (index < len) {
@@ -43,26 +48,33 @@ const QuestionPanel = ({index, setIndex}) => {
   };
 
   const clear = () => {
-    const questionId = Questions[index - 1].id;
-    ClearResponse({ questionId, examId});
+    if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    ClearResponse({ questionId, examId });
     setOption(null);
   };
 
   const handleOption = (e) => {
-    setOption(e.target.value);
+    const val = e.target.value;
+    setOption(val);
+    if (currentQuestion) {
+      SaveResponse({ questionId: currentQuestion.id, selectedOption: val, examId });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 800);
+    }
   };
+
+  if (!currentQuestion) return <div className="questionPanel">Loading...</div>;
 
   return (
     <>
       <div className="questionPanel">
         <p>Question {index}.</p>
-        <div className="content">{Questions[index - 1].content}</div>
-        {Questions[index - 1].url && (
-          <img src={Questions[index - 1].url} alt="" />
-        )}
+        <div className="content">{currentQuestion.content}</div>
+        {currentQuestion.url && <img src={currentQuestion.url} alt="" />}
 
         <div className="options">
-          {Questions[index - 1].options.map((op) => (
+          {currentQuestion.options.map((op) => (
             <div key={op.id}>
               <input
                 type="radio"
@@ -76,12 +88,17 @@ const QuestionPanel = ({index, setIndex}) => {
             </div>
           ))}
         </div>
+        <div className="saveIndicator">{saved ? "Saved" : ""}</div>
       </div>
 
       <div className="panelButtons">
         <button onClick={prevQuestion}>Back</button>
-        <button style={{background:"#f55442"}} onClick={clear}>Clear</button>
-        <button style={{background:"#276e01"}} onClick={saveNext}>Save&Next</button>
+        <button style={{ background: "#f55442" }} onClick={clear}>
+          Clear
+        </button>
+        <button style={{ background: "#276e01" }} onClick={saveNext}>
+          Save&Next
+        </button>
         <button onClick={nextQuestion}>Next</button>
       </div>
     </>

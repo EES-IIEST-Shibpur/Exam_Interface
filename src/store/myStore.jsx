@@ -1,5 +1,5 @@
 import axios from "axios";
-import { createContext, useEffect, useReducer, useState } from "react";
+import { createContext, useEffect, useReducer, useState, useRef } from "react";
 
 export const ExamContext = createContext({
   checkProceed: false,
@@ -56,6 +56,113 @@ const ExamProvider = ({ children }) => {
       ? JSON.parse(localStorage.getItem("response"))
       : { examId: "", answers: [] }
   );
+
+  // Timer / sync state
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const [timerColor, setTimerColor] = useState("neutral");
+  const syncIntervalRef = useRef(null);
+  const tickIntervalRef = useRef(null);
+
+  const formatTime = (sec) => {
+    if (sec == null || sec <= 0) return "00:00:00";
+    const h = Math.floor(sec / 3600)
+      .toString()
+      .padStart(2, "0");
+    const m = Math.floor((sec % 3600) / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor(sec % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  };
+
+  // Sync remaining time from exam.endTime and attempt server drift correction
+  useEffect(() => {
+    const setupTimer = async () => {
+      if (!exam?.endTime) {
+        setRemainingSeconds(null);
+        return;
+      }
+
+      const endTs = new Date(exam.endTime).getTime();
+      const computeRemaining = (offsetMs = 0) => {
+        const now = Date.now() + offsetMs;
+        return Math.max(0, Math.floor((endTs - now) / 1000));
+      };
+
+      // initial set
+      setRemainingSeconds(computeRemaining());
+
+      // tick every second
+      if (tickIntervalRef.current) clearInterval(tickIntervalRef.current);
+      tickIntervalRef.current = setInterval(() => {
+        setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+
+      // periodic drift correction (attempt server time endpoint)
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+      const trySync = async () => {
+        try {
+          const res = await axios.get("http://localhost:8000/api/server-time");
+          if (res?.data?.serverTime) {
+            const serverNow = new Date(res.data.serverTime).getTime();
+            const offset = serverNow - Date.now();
+            setRemainingSeconds(computeRemaining(offset));
+          }
+        } catch (e) {
+          // ignore if endpoint not available
+        }
+      };
+      // run immediately and then every 30s
+      trySync();
+      syncIntervalRef.current = setInterval(trySync, 30000);
+    };
+
+    setupTimer();
+
+    return () => {
+      if (tickIntervalRef.current) clearInterval(tickIntervalRef.current);
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    };
+  }, [exam?.endTime]);
+
+  useEffect(() => {
+    if (remainingSeconds == null) return;
+    if (remainingSeconds <= 120) setTimerColor("red");
+    else if (remainingSeconds <= 600) setTimerColor("amber");
+    else setTimerColor("neutral");
+  }, [remainingSeconds]);
+
+  const submitExam = async () => {
+    try {
+      if (!examId) return;
+      await axios.post(
+        `http://localhost:8000/api/exam-taking/submit/${examId}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    } catch (e) {
+      console.error("submitExam error", e);
+    }
+  };
+
+  const sendEvent = async (type, details = {}) => {
+    try {
+      if (!examId) return;
+      await axios.post(
+        `http://localhost:8000/api/exam-event`,
+        { type, examId, details },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    } catch (e) {
+      // swallow errors for events
+    }
+  };
 
   const Questions = (exam?.questions || []).map((question) => ({
     id: question._id || question.id || "",
@@ -163,7 +270,15 @@ const ExamProvider = ({ children }) => {
         setToken,
         setExamId,
         examId,
-        ExamTitle
+        ExamTitle,
+        Timer: {
+          remainingSeconds,
+          formatted: formatTime(remainingSeconds),
+          color: timerColor,
+          isOver: remainingSeconds === 0,
+        },
+        submitExam,
+        sendEvent,
       }}
     >
       {children}
